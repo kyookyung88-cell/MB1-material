@@ -15,8 +15,9 @@ st.set_page_config(
 )
 
 # ── 파일 경로 ──
-EXCEL_FILE = os.path.join(os.path.dirname(__file__), "MB1팀 소재 제안 및 채택 현황 (Ver1.0, 251203).xlsx")
-DATA_FILE = os.path.join(os.path.dirname(__file__), "data_store.json")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+EXCEL_FILE = os.path.join(BASE_DIR, "MB1팀 소재 제안 및 채택 현황 (Ver1.0, 251203).xlsx")
+DATA_FILE = os.path.join(BASE_DIR, "data_store.json")
 
 # ── 컬럼 정의 (2026 시트 기준) ──
 COLUMNS = [
@@ -333,7 +334,7 @@ with tab3:
             with r2c1:
                 st.selectbox("중국", ["", "O", "X"], key=f"m_china_{i}")
             with r2c2:
-                st.selectbox("EWG", ["", "O", "X"], key=f"m_ewg_{i}")
+                st.selectbox("EWG", ["", "Green", "Yellow", "Red"], key=f"m_ewg_{i}")
             with r2c3:
                 st.selectbox("비건", ["", "O", "X"], key=f"m_vegan_{i}")
             with r2c4:
@@ -411,3 +412,4 @@ with tab3:
                 os.remove(DATA_FILE)
                 st.success("추가 데이터가 삭제되었습니다.")
                 st.rerun()
+
