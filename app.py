@@ -332,13 +332,13 @@ with tab3:
 
             r2c1, r2c2, r2c3, r2c4, r2c5, r2c6 = st.columns(6)
             with r2c1:
-                st.selectbox("중국", ["", "O", "X"], key=f"m_china_{i}")
+                st.selectbox("중국", ["", "가능", "불가능"], key=f"m_china_{i}")
             with r2c2:
                 st.selectbox("EWG", ["", "Green", "Yellow", "Red"], key=f"m_ewg_{i}")
             with r2c3:
                 st.selectbox("비건", ["", "O", "X"], key=f"m_vegan_{i}")
             with r2c4:
-                st.text_input("임상", key=f"m_clinical_{i}")
+                st.selectbox("임상", ["", "O", "X"], key=f"m_clinical_{i}")
             with r2c5:
                 st.text_input("Rec. dose", key=f"m_rec_dose_{i}")
             with r2c6:
@@ -412,4 +412,3 @@ with tab3:
                 os.remove(DATA_FILE)
                 st.success("추가 데이터가 삭제되었습니다.")
                 st.rerun()
-
