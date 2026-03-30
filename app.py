@@ -19,6 +19,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXCEL_FILE = os.path.join(BASE_DIR, "MB1팀 소재 제안 및 채택 현황 (Ver1.0, 251203).xlsx")
 DATA_FILE = os.path.join(BASE_DIR, "data_store.json")
 DELETED_FILE = os.path.join(BASE_DIR, "deleted_entries.json")
+EDITS_FILE = os.path.join(BASE_DIR, "edited_entries.json")
 
 # ── 컬럼 정의 (2026 시트 기준) ──
 COLUMNS = [
@@ -85,8 +86,22 @@ def make_row_key(row: dict) -> str:
     return f"{row.get('날짜', '')}|{row.get('고객사', '')}|{row.get('소재명', '')}"
 
 
+def load_edits():
+    """수정된 항목 로드 (key -> 수정된 필드 dict)"""
+    if os.path.exists(EDITS_FILE):
+        with open(EDITS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_edits(edits: dict):
+    """수정된 항목 저장"""
+    with open(EDITS_FILE, "w", encoding="utf-8") as f:
+        json.dump(edits, f, ensure_ascii=False, indent=2)
+
+
 def load_all_data():
-    """엑셀 + JSON 저장소 데이터를 합쳐 반환 (삭제 항목 제외)"""
+    """엑셀 + JSON 저장소 데이터를 합쳐 반환 (삭제 항목 제외, 수정 반영)"""
     excel_rows = load_excel_data()
     extra_rows = []
     if os.path.exists(DATA_FILE):
@@ -94,9 +109,13 @@ def load_all_data():
             extra_rows = json.load(f)
 
     deleted_keys = load_deleted_keys()
+    edits = load_edits()
     all_rows = []
     for row in excel_rows + extra_rows:
-        if make_row_key(row) not in deleted_keys:
+        key = make_row_key(row)
+        if key not in deleted_keys:
+            if key in edits:
+                row.update(edits[key])
             all_rows.append(row)
 
     df = pd.DataFrame(all_rows, columns=COLUMNS)
@@ -267,9 +286,35 @@ with tab1:
 with tab2:
     st.subheader("전체 데이터 조회")
 
-    # 검색
-    search = st.text_input("소재명/INCI/효능 검색", "")
+    # ── 검색 + 정렬 + 필터 ──
+    search_col, sort_col, order_col = st.columns([2, 1, 1])
+    with search_col:
+        search = st.text_input("소재명/INCI/효능 검색", "")
+    with sort_col:
+        sort_options = {"날짜": "날짜", "소재명": "소재명", "고객사": "고객사",
+                        "베네핏": "베네핏", "효능": "효능", "원료사": "원료사",
+                        "담당자": "담당자", "채택여부": "채택여부"}
+        sort_by = st.selectbox("정렬 기준", list(sort_options.keys()), index=0)
+    with order_col:
+        sort_order = st.radio("정렬 순서", ["오름차순", "내림차순"], horizontal=True)
+
+    # 열별 필터
+    with st.expander("열별 필터", expanded=False):
+        fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+        with fc1:
+            filter_client = st.multiselect("고객사 필터", sorted(filtered["고객사"].dropna().unique().tolist()), key="tab2_client")
+        with fc2:
+            filter_benefit = st.multiselect("베네핏 필터", sorted(filtered["베네핏"].dropna().unique().tolist()), key="tab2_benefit")
+        with fc3:
+            filter_patent = st.multiselect("특허 필터", sorted(filtered["특허"].dropna().astype(str).unique().tolist()), key="tab2_patent")
+        with fc4:
+            filter_ewg = st.multiselect("EWG 필터", sorted(filtered["EWG"].dropna().astype(str).unique().tolist()), key="tab2_ewg")
+        with fc5:
+            filter_adopted = st.multiselect("채택여부 필터", sorted(filtered["채택여부"].dropna().astype(str).unique().tolist()), key="tab2_adopted")
+
     display_df = filtered.copy()
+
+    # 검색 적용
     if search:
         mask = (
             display_df["소재명"].fillna("").str.contains(search, case=False, na=False)
@@ -278,9 +323,29 @@ with tab2:
         )
         display_df = display_df[mask]
 
+    # 열별 필터 적용
+    if filter_client:
+        display_df = display_df[display_df["고객사"].isin(filter_client)]
+    if filter_benefit:
+        display_df = display_df[display_df["베네핏"].isin(filter_benefit)]
+    if filter_patent:
+        display_df = display_df[display_df["특허"].astype(str).isin(filter_patent)]
+    if filter_ewg:
+        display_df = display_df[display_df["EWG"].astype(str).isin(filter_ewg)]
+    if filter_adopted:
+        display_df = display_df[display_df["채택여부"].astype(str).isin(filter_adopted)]
+
+    # 정렬 적용
+    ascending = sort_order == "오름차순"
+    sort_col_name = sort_options[sort_by]
+    display_df = display_df.sort_values(
+        by=sort_col_name, ascending=ascending,
+        na_position="last", key=lambda s: s.astype(str).str.lower()
+    ).reset_index(drop=True)
+
     st.info(f"총 {len(display_df)}건 조회됨")
 
-    # 체크박스 컬럼 추가하여 data_editor로 표시
+    # ── 데이터 편집 테이블 ──
     display_cols = ["날짜", "고객사", "베네핏", "소재명", "INCI", "효능", "원료사", "특허", "중국",
                     "EWG", "비건", "채택여부", "담당자"]
     edit_df = display_df[display_cols].copy()
@@ -290,31 +355,89 @@ with tab2:
         edit_df,
         use_container_width=True,
         height=600,
-        disabled=display_cols,
         column_config={
-            "선택": st.column_config.CheckboxColumn("삭제 선택", default=False),
+            "선택": st.column_config.CheckboxColumn("삭제", default=False, width="small"),
+            "날짜": st.column_config.TextColumn("날짜", width="small"),
+            "고객사": st.column_config.TextColumn("고객사"),
+            "베네핏": st.column_config.TextColumn("베네핏"),
+            "소재명": st.column_config.TextColumn("소재명"),
+            "INCI": st.column_config.TextColumn("INCI"),
+            "효능": st.column_config.TextColumn("효능"),
+            "원료사": st.column_config.TextColumn("원료사"),
+            "특허": st.column_config.TextColumn("특허"),
+            "중국": st.column_config.TextColumn("중국"),
+            "EWG": st.column_config.TextColumn("EWG"),
+            "비건": st.column_config.TextColumn("비건"),
+            "채택여부": st.column_config.TextColumn("채택여부"),
+            "담당자": st.column_config.TextColumn("담당자"),
         },
     )
+
+    # ── 버튼 영역: 수정 저장 / 선택 삭제 ──
+    btn1, btn2, btn3, _ = st.columns([1, 1, 1, 3])
+
+    # 수정 감지 및 저장
+    with btn1:
+        if st.button("수정사항 저장", type="primary", use_container_width=True):
+            edits = load_edits()
+            edit_count = 0
+            for idx in range(len(edited)):
+                edited_row = edited.iloc[idx]
+                original_row = edit_df.iloc[idx]
+                changed = {}
+                for col in display_cols:
+                    old_val = original_row[col]
+                    new_val = edited_row[col]
+                    old_str = "" if pd.isna(old_val) else str(old_val)
+                    new_str = "" if pd.isna(new_val) else str(new_val)
+                    if old_str != new_str:
+                        changed[col] = new_val
+                if changed:
+                    orig_dict = display_df.iloc[idx].to_dict()
+                    row_key = make_row_key(orig_dict)
+
+                    # JSON 저장소 데이터 수정
+                    if os.path.exists(DATA_FILE):
+                        with open(DATA_FILE, "r", encoding="utf-8") as f:
+                            extra = json.load(f)
+                        updated_json = False
+                        for e in extra:
+                            if make_row_key(e) == row_key:
+                                e.update(changed)
+                                updated_json = True
+                                break
+                        if updated_json:
+                            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                                json.dump(extra, f, ensure_ascii=False, indent=2)
+                            edit_count += 1
+                            continue
+
+                    # 엑셀 데이터는 edits 파일에 저장
+                    if row_key not in edits:
+                        edits[row_key] = {}
+                    edits[row_key].update(changed)
+                    edit_count += 1
+
+            if edit_count > 0:
+                save_edits(edits)
+                st.success(f"{edit_count}건 수정 저장되었습니다.")
+                st.rerun()
+            else:
+                st.info("변경된 내용이 없습니다.")
 
     # 선택된 행 삭제
     selected_mask = edited["선택"] == True
     selected_count = selected_mask.sum()
 
-    del_col1, del_col2, _ = st.columns([1, 1, 4])
-    with del_col1:
+    with btn2:
         if selected_count > 0:
-            st.warning(f"{selected_count}건 선택됨")
-    with del_col2:
-        if selected_count > 0:
-            if st.button(f"선택 항목 삭제 ({selected_count}건)", type="primary"):
+            if st.button(f"선택 삭제 ({selected_count}건)", type="secondary", use_container_width=True):
                 selected_rows = display_df.iloc[selected_mask.values]
                 deleted_keys = load_deleted_keys()
-                removed_from_json = 0
 
                 for _, row in selected_rows.iterrows():
                     row_key = make_row_key(row.to_dict())
 
-                    # JSON 저장소에서 직접 삭제 시도
                     if os.path.exists(DATA_FILE):
                         with open(DATA_FILE, "r", encoding="utf-8") as f:
                             extra = json.load(f)
@@ -322,22 +445,20 @@ with tab2:
                         if len(new_extra) < len(extra):
                             with open(DATA_FILE, "w", encoding="utf-8") as f:
                                 json.dump(new_extra, f, ensure_ascii=False, indent=2)
-                            removed_from_json += 1
                             continue
 
-                    # 엑셀 데이터인 경우 삭제 목록에 추가
                     if row_key not in deleted_keys:
                         deleted_keys.append(row_key)
 
                 save_deleted_keys(deleted_keys)
                 st.success(f"{selected_count}건이 삭제되었습니다.")
                 st.rerun()
+        else:
+            st.button("선택 삭제", disabled=True, use_container_width=True)
 
-    st.divider()
-
-    # CSV 다운로드
-    csv = filtered.to_csv(index=False).encode("utf-8-sig")
-    st.download_button("CSV 다운로드", csv, "MB1_소재현황.csv", "text/csv")
+    with btn3:
+        csv = filtered.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("CSV 다운로드", csv, "MB1_소재현황.csv", "text/csv", use_container_width=True)
 
 
 # ══════════════════════════════════════════
