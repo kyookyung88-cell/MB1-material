@@ -327,7 +327,7 @@ with tab3:
                 st.text_input("효능", key=f"m_efficacy_{i}")
                 st.text_area("Story", height=68, key=f"m_story_{i}")
             with r1c3:
-                st.text_input("특허 (O/X/등록 중)", key=f"m_patent_{i}")
+                st.selectbox("특허", ["", "등록", "출원", "해당사항 없음"], key=f"m_patent_{i}")
                 st.text_input("RTB", key=f"m_rtb_{i}")
 
             r2c1, r2c2, r2c3, r2c4, r2c5, r2c6 = st.columns(6)
