@@ -23,7 +23,8 @@ DATA_FILE = os.path.join(BASE_DIR, "data_store.json")
 COLUMNS = [
     "날짜", "고객사", "요청사항/컨셉", "베네핏", "NO", "소재명", "INCI", "효능",
     "Story", "특허", "중국", "EWG", "비건", "RTB", "임상",
-    "Recommended dose", "Clinical dose", "자사코드", "채택여부", "고객사 반응", "담당자"
+    "Recommended dose", "Clinical dose", "자사코드", "채택여부", "고객사 반응", "담당자",
+    "원료사"
 ]
 
 
@@ -254,7 +255,7 @@ with tab2:
     st.info(f"총 {len(display_df)}건 조회됨")
 
     # 주요 컬럼만 표시
-    display_cols = ["날짜", "고객사", "베네핏", "소재명", "INCI", "효능", "특허", "중국",
+    display_cols = ["날짜", "고객사", "베네핏", "소재명", "INCI", "효능", "원료사", "특허", "중국",
                     "EWG", "비건", "채택여부", "담당자"]
     st.dataframe(
         display_df[display_cols],
@@ -325,6 +326,7 @@ with tab3:
                 st.text_input("INCI", key=f"m_inci_{i}")
             with r1c2:
                 st.text_input("효능", key=f"m_efficacy_{i}")
+                st.text_input("원료사", key=f"m_supplier_{i}")
                 st.text_area("Story", height=68, key=f"m_story_{i}")
             with r1c3:
                 st.selectbox("특허", ["", "등록", "출원", "해당사항 없음"], key=f"m_patent_{i}")
@@ -385,6 +387,7 @@ with tab3:
                 "채택여부": st.session_state.get(f"m_adopted_{i}", "") or None,
                 "고객사 반응": common_reaction or None,
                 "담당자": common_manager or None,
+                "원료사": st.session_state.get(f"m_supplier_{i}", "") or None,
             })
 
         if errors:
