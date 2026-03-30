@@ -18,6 +18,7 @@ st.set_page_config(
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EXCEL_FILE = os.path.join(BASE_DIR, "MB1팀 소재 제안 및 채택 현황 (Ver1.0, 251203).xlsx")
 DATA_FILE = os.path.join(BASE_DIR, "data_store.json")
+DELETED_FILE = os.path.join(BASE_DIR, "deleted_entries.json")
 
 # ── 컬럼 정의 (2026 시트 기준) ──
 COLUMNS = [
@@ -65,14 +66,39 @@ def load_excel_data():
     return rows
 
 
+def load_deleted_keys():
+    """삭제된 항목의 키 목록을 로드"""
+    if os.path.exists(DELETED_FILE):
+        with open(DELETED_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
+
+
+def save_deleted_keys(keys: list):
+    """삭제된 항목의 키 목록을 저장"""
+    with open(DELETED_FILE, "w", encoding="utf-8") as f:
+        json.dump(keys, f, ensure_ascii=False, indent=2)
+
+
+def make_row_key(row: dict) -> str:
+    """행의 고유 키 생성 (날짜+고객사+소재명)"""
+    return f"{row.get('날짜', '')}|{row.get('고객사', '')}|{row.get('소재명', '')}"
+
+
 def load_all_data():
-    """엑셀 + JSON 저장소 데이터를 합쳐 반환"""
+    """엑셀 + JSON 저장소 데이터를 합쳐 반환 (삭제 항목 제외)"""
     excel_rows = load_excel_data()
     extra_rows = []
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             extra_rows = json.load(f)
-    all_rows = excel_rows + extra_rows
+
+    deleted_keys = load_deleted_keys()
+    all_rows = []
+    for row in excel_rows + extra_rows:
+        if make_row_key(row) not in deleted_keys:
+            all_rows.append(row)
+
     df = pd.DataFrame(all_rows, columns=COLUMNS)
     return df
 
@@ -254,14 +280,60 @@ with tab2:
 
     st.info(f"총 {len(display_df)}건 조회됨")
 
-    # 주요 컬럼만 표시
+    # 체크박스 컬럼 추가하여 data_editor로 표시
     display_cols = ["날짜", "고객사", "베네핏", "소재명", "INCI", "효능", "원료사", "특허", "중국",
                     "EWG", "비건", "채택여부", "담당자"]
-    st.dataframe(
-        display_df[display_cols],
+    edit_df = display_df[display_cols].copy()
+    edit_df.insert(0, "선택", False)
+
+    edited = st.data_editor(
+        edit_df,
         use_container_width=True,
         height=600,
+        disabled=display_cols,
+        column_config={
+            "선택": st.column_config.CheckboxColumn("삭제 선택", default=False),
+        },
     )
+
+    # 선택된 행 삭제
+    selected_mask = edited["선택"] == True
+    selected_count = selected_mask.sum()
+
+    del_col1, del_col2, _ = st.columns([1, 1, 4])
+    with del_col1:
+        if selected_count > 0:
+            st.warning(f"{selected_count}건 선택됨")
+    with del_col2:
+        if selected_count > 0:
+            if st.button(f"선택 항목 삭제 ({selected_count}건)", type="primary"):
+                selected_rows = display_df.iloc[selected_mask.values]
+                deleted_keys = load_deleted_keys()
+                removed_from_json = 0
+
+                for _, row in selected_rows.iterrows():
+                    row_key = make_row_key(row.to_dict())
+
+                    # JSON 저장소에서 직접 삭제 시도
+                    if os.path.exists(DATA_FILE):
+                        with open(DATA_FILE, "r", encoding="utf-8") as f:
+                            extra = json.load(f)
+                        new_extra = [e for e in extra if make_row_key(e) != row_key]
+                        if len(new_extra) < len(extra):
+                            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                                json.dump(new_extra, f, ensure_ascii=False, indent=2)
+                            removed_from_json += 1
+                            continue
+
+                    # 엑셀 데이터인 경우 삭제 목록에 추가
+                    if row_key not in deleted_keys:
+                        deleted_keys.append(row_key)
+
+                save_deleted_keys(deleted_keys)
+                st.success(f"{selected_count}건이 삭제되었습니다.")
+                st.rerun()
+
+    st.divider()
 
     # CSV 다운로드
     csv = filtered.to_csv(index=False).encode("utf-8-sig")
