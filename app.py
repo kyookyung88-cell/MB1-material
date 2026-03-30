@@ -349,6 +349,8 @@ with tab2:
     display_cols = ["날짜", "고객사", "베네핏", "소재명", "INCI", "효능", "원료사", "특허", "중국",
                     "EWG", "비건", "채택여부", "담당자"]
     edit_df = display_df[display_cols].copy()
+    for col in display_cols:
+        edit_df[col] = edit_df[col].astype(str).replace({"None": "", "nan": "", "NaT": ""})
     edit_df.insert(0, "선택", False)
 
     edited = st.data_editor(
