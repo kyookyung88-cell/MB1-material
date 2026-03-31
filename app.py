@@ -6,6 +6,7 @@ from openpyxl import load_workbook
 from datetime import datetime, date
 import os
 import json
+from io import BytesIO
 
 # ── 페이지 설정 ──
 st.set_page_config(
@@ -459,8 +460,93 @@ with tab2:
             st.button("선택 삭제", disabled=True, use_container_width=True)
 
     with btn3:
-        csv = filtered.to_csv(index=False).encode("utf-8-sig")
-        st.download_button("CSV 다운로드", csv, "MB1_소재현황.csv", "text/csv", use_container_width=True)
+        excel_buf = BytesIO()
+        filtered.to_excel(excel_buf, index=False, engine="openpyxl")
+        st.download_button(
+            "Excel 다운로드", excel_buf.getvalue(),
+            "MB1_소재현황.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
+
+    # ── 소재 상세 보기 ──
+    st.divider()
+    st.subheader("소재 상세 정보")
+
+    if len(display_df) > 0:
+        material_list = display_df["소재명"].tolist()
+        selected_material = st.selectbox(
+            "소재를 선택하세요",
+            options=range(len(material_list)),
+            format_func=lambda i: f"{material_list[i]}  ({display_df.iloc[i].get('고객사', '-')} / {display_df.iloc[i].get('날짜', '-')})",
+            key="detail_select",
+        )
+
+        row = display_df.iloc[selected_material]
+
+        def _val(v):
+            if v is None or (isinstance(v, float) and pd.isna(v)):
+                return "-"
+            s = str(v).strip()
+            return s if s and s not in ("None", "nan", "NaT") else "-"
+
+        # 상세 카드
+        st.markdown("---")
+        h1, h2, h3 = st.columns(3)
+        with h1:
+            st.markdown(f"**소재명**")
+            st.markdown(f"### {_val(row.get('소재명'))}")
+        with h2:
+            st.markdown(f"**고객사**")
+            st.markdown(f"### {_val(row.get('고객사'))}")
+        with h3:
+            st.markdown(f"**날짜**")
+            st.markdown(f"### {_val(row.get('날짜'))}")
+
+        st.markdown("---")
+
+        # 기본 정보
+        d1, d2 = st.columns(2)
+        with d1:
+            st.markdown("**요청사항 / 컨셉**")
+            st.text(_val(row.get("요청사항/컨셉")))
+            st.markdown("**베네핏**")
+            st.text(_val(row.get("베네핏")))
+            st.markdown("**INCI**")
+            st.text(_val(row.get("INCI")))
+            st.markdown("**효능**")
+            st.text(_val(row.get("효능")))
+            st.markdown("**원료사**")
+            st.text(_val(row.get("원료사")))
+        with d2:
+            st.markdown("**Story**")
+            st.text(_val(row.get("Story")))
+            st.markdown("**RTB**")
+            st.text(_val(row.get("RTB")))
+            st.markdown("**담당자**")
+            st.text(_val(row.get("담당자")))
+            st.markdown("**고객사 반응**")
+            st.text(_val(row.get("고객사 반응")))
+
+        st.markdown("---")
+
+        # 인증/규격 정보
+        st.markdown("**인증 및 규격**")
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("특허", _val(row.get("특허")))
+        c2.metric("중국", _val(row.get("중국")))
+        c3.metric("EWG", _val(row.get("EWG")))
+        c4.metric("비건", _val(row.get("비건")))
+        c5.metric("임상", _val(row.get("임상")))
+
+        # 용량/코드 정보
+        c6, c7, c8, c9 = st.columns(4)
+        c6.metric("Recommended dose", _val(row.get("Recommended dose")))
+        c7.metric("Clinical dose", _val(row.get("Clinical dose")))
+        c8.metric("자사코드", _val(row.get("자사코드")))
+        c9.metric("채택여부", _val(row.get("채택여부")))
+    else:
+        st.info("조회된 데이터가 없습니다.")
 
 
 # ══════════════════════════════════════════
